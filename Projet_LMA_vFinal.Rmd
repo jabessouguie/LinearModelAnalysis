@@ -1,0 +1,743 @@
+---
+title: "Project LMA"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+# Importing the different libraries
+library(tidyverse)    # For gimples
+library(DataExplorer)
+library(GGally)
+library(ggplot2)      # For plots 
+library(caret)        # For one hot encoding 
+library(corrplot)     # For the correlation plot 
+library(RColorBrewer) # For colors of corr plot
+library(car) # For the diagnosis
+library(rcompanion)
+```
+
+# Preliminary analysis
+## 1) Global overlook of the dataset 
+We first import the dataset 
+```{r}
+data <- costdata
+head(costdata)
+```
+
+And plot summary statistics of the dataset
+```{r}
+summary(data)
+```
+
+## 2) Categorical data 
+
+```{r}
+costdata$smoker[costdata$smoker == "yes"] <- TRUE
+costdata$smoker[costdata$smoker == "no"] <- FALSE
+costdata$smoker <- as.logical(costdata$smoker)
+```
+
+```{r}
+table(costdata$smoker) 
+table(costdata$sex) 
+table(costdata$children) 
+table(costdata$region) 
+```
+
+We plot pie chart in order to realize the distribution of the categorical data and the eventual bias
+```{r}
+smoker <- c(0.79, 0.21)
+names(smoker) <- c("No","Yes")
+pie(smoker, col = c("black","white"))
+
+sex <- c(652, 666)
+names(sex) <- c("Female","male")
+pie(sex, col = c("cyan","red"))
+
+region <- c(318,319,360,321 )
+names(region) <- c("northeast","northwest","southeast","southwest")
+pie(region, col = c("green3","cornsilk","cyan","white"))
+
+```
+
+
+## 3) Numerical data
+```{r}
+numerical_vars <- c(1,3,7)
+# Plot the correlation matrix 
+cor(data[, numerical_vars])
+```
+
+```{r}
+# Plotting density plot for the bmi and the cost
+library(ggplot2)
+library(dplyr)
+data %>%
+  ggplot( aes(x=bmi)) +
+    geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.5)
+
+data %>%
+  ggplot( aes(x=costs)) +
+    geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8)
+#plot(density(costdata$bmi))
+
+#plot(density(costdata$cost))
+```
+
+We plot an histogram and a boxplot of the distribution of the age of the population in the dataset.
+```{r}
+# Layout to split the screen
+layout(mat = matrix(c(1,2),2,1, byrow=TRUE),  height = c(1,8))
+ 
+# Draw the boxplot and the histogram 
+par(mar=c(0, 3.1, 1.1, 2.1))
+boxplot(costdata$children , horizontal=TRUE , ylim=c(-1,6), xaxt="n" , col=rgb(0.8,0.8,0,0.5) , frame=F)
+par(mar=c(4, 3.1, 1.1, 2.1))
+hist(costdata$children , breaks=40 , col=rgb(0.2,0.8,0.5,0.5) , border=F , main="Distribution of the number of the children of the population in the dataset" , xlab="Age",ylab = "Amount", xlim=c(-1,6))
+
+
+```
+```{r}
+pairs(data[, numerical_vars], main="", pch=21,
+       bg = c("red", "green3", "blue","black")[unclass(data$smoker)])
+```
+
+## 4) Influence of the factor "smoker"
+```{r}
+library(ggplot2)
+library(hrbrthemes)
+
+
+ 
+# A basic scatterplot with color depending on of the patient is a smoker or not 
+ggplot(data, aes(x=age, y=costs, color=smoker)) + 
+    geom_point(size=2) +
+    theme_ipsum()
+```
+```{r}
+ggplot(data, aes(x=bmi, y=costs, color=smoker)) + 
+    geom_point(size=2) +
+    theme_ipsum()
+```
+
+```{r}
+par(mar=c(3,4,3,1))
+myplot <- boxplot(data$costs ~ data$smoker*data$children , data  , 
+        boxwex=0.5 , ylab="Cost",
+        main="Cost depending of the number of children" , 
+        col=c("slateblue1" , "tomato") ,  
+        xaxt="n")
+ 
+# To add the label of x axis
+my_names <- sapply(strsplit(myplot$names , '\\.') , function(x) x[[2]] )
+my_names <- my_names[seq(1 , length(my_names) , 2)]
+axis(1, 
+     at = seq(1.5 , 12 , 2), 
+     labels = my_names , 
+     tick=FALSE , cex=0.3)
+
+# Add the grey vertical lines
+for(i in seq(2.5 , 12 , 2)){ 
+  abline(v=i,lty=1, col="grey")
+  }
+ 
+# Add a legend
+legend("bottomright", legend = c("Smoker", "Non Smoker"), 
+       col=c("slateblue1" , "tomato"),
+       pch = 15, bty = "n", pt.cex = 1, cex = 1.2,  horiz = F, inset = c(0.0, 0.8))
+```
+
+
+## 5) Influence of the factor region on the cost 
+```{r}
+
+library(ggplot2)
+
+ggplot(data, aes(x=as.factor(region), y=costs)) + 
+  geom_violin()+
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Region") + ylab("Cost")
+
+
+```
+
+5) Influence of the factor number of children on the cost 
+```{r}
+
+library(ggplot2)
+
+ggplot(data, aes(x=as.factor(children), y=data$costs)) + 
+  geom_violin()+
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Number of children") + ylab("Cost")
+
+
+```
+
+```{r}
+# -------- Dummy variabels of binary  -------- 
+data.dummy = data
+data.dummy$sex<-as.factor(data.dummy$sex)
+data.dummy$smoker<-as.factor(data.dummy$smoker)
+data.dummy$region<-as.factor(data.dummy$region)
+
+contrasts(data.dummy$sex) # function returns the coding that R have used to create the dummy variables
+contrasts(data.dummy$smoker) # smoker - yes = 1 , sex - male = 1
+```
+
+```{r}
+# Transforming region to dummy
+data.dummy2 = data.dummy
+dummy <- dummyVars(" ~ .", data=data.dummy2,fullRank = TRUE)
+data.transformed <- data.frame(predict(dummy, newdata = data.dummy2)) 
+
+glimpse(data.transformed)
+summary(data.transformed)
+```
+
+```{r}
+# -------- Visualization of dataset  ------- 
+pairs(data.dummy)
+pairs(data.transformed)
+```
+
+```{r}
+# -------- Correlation plot -------- 
+ggpairs(data)+ theme_bw()
+ggpairs(data.transformed)+ theme_bw()
+```
+
+```{r}
+# simple correlation plot
+corr <- round(cor(data.transformed), 1)
+head(corr[, 1:6])
+corrplot(corr, type="upper", order="hclust", tl.col="black", tl.srt=45)
+```
+
+```{r}
+# V of cramer to see associations between categorical features
+# Descriptive analysis
+# V of cramer
+cramerV(table(data$smoker, data$region))
+cramerV(table(data$smoker, data$sex))
+cramerV(table(data$region, data$sex))
+```
+
+
+## 1st approach 
+```{r}
+# -------- Partition data to test and training dataset -------- 
+n<-dim(data.transformed)[1]
+
+set.seed(1)                # for reproducible example
+test.ind<-sample(n,0.2*n)  # random sample of 20% of data
+```
+
+```{r}
+# Training data
+data.train<-data.transformed[-test.ind,]
+summary(data.train)
+dim(data.train)
+```
+
+```{r}
+# Checking for duplicates 
+dup = data.train[duplicated(data.train), ] # No duplicates 
+```
+
+```{r}
+# Testing data
+data.test <- data.transformed[test.ind,]
+summary(data.test)
+dim(data.test)
+```
+
+```{r}
+# -------- Modelling -------- 
+# ---------- Ordinary least squares 
+# Credits to: Russell Steele
+# Build Anova table in classic format
+anova_alt = function (object, reg_collapse=TRUE,...) 
+{
+  if (length(list(object, ...)) > 1L) 
+    return(anova.lmlist(object, ...))
+  if (!inherits(object, "lm")) 
+    warning("calling anova.lm(<fake-lm-object>) ...")
+  w <- object$weights
+  ssr <- sum(if (is.null(w)) object$residuals^2 else w * object$residuals^2)
+  mss <- sum(if (is.null(w)) object$fitted.values^2 else w * 
+               object$fitted.values^2)
+  if (ssr < 1e-10 * mss) 
+    warning("ANOVA F-tests on an essentially perfect fit are unreliable")
+  dfr <- df.residual(object)
+  p <- object$rank
+  if (p > 0L) {
+    p1 <- 1L:p
+    comp <- object$effects[p1]
+    asgn <- object$assign[stats:::qr.lm(object)$pivot][p1]
+    nmeffects <- c("(Intercept)", attr(object$terms, "term.labels"))
+    tlabels <- nmeffects[1 + unique(asgn)]
+    ss <- c(vapply(split(comp^2, asgn), sum, 1), ssr)
+    df <- c(lengths(split(asgn, asgn)), dfr)
+    if(reg_collapse){
+      if(attr(object$terms, "intercept")){
+        collapse_p<-2:(length(ss)-1)
+        ss<-c(ss[1],sum(ss[collapse_p]),ss[length(ss)])
+        df<-c(df[1],sum(df[collapse_p]),df[length(df)])
+        tlabels<-c(tlabels[1],"Source")
+      } else{
+        collapse_p<-1:(length(ss)-1)
+        ss<-c(sum(ss[collapse_p]),ss[length(ss)])
+        df<-c(df[1],sum(df[collapse_p]),df[length(df)])
+        tlabels<-c("Regression")
+      }
+    }
+  }else {
+    ss <- ssr
+    df <- dfr
+    tlabels <- character()
+    if(reg_collapse){
+      collapse_p<-1:(length(ss)-1)
+      ss<-c(sum(ss[collapse_p]),ss[length(ss)])
+      df<-c(df[1],sum(df[collapse_p]),df[length(df)])
+    }
+  }
+  
+  ms <- ss/df
+  f <- ms/(ssr/dfr)
+  P <- pf(f, df, dfr, lower.tail = FALSE)
+  table <- data.frame(df, ss, ms, f, P)
+  table <- rbind(table, 
+                 colSums(table))
+  if (attr(object$terms, "intercept")){
+    table$ss[nrow(table)]<- table$ss[nrow(table)] - table$ss[1]
+  }
+  table$ms[nrow(table)]<-table$ss[nrow(table)]/table$df[nrow(table)]
+  table[length(P):(length(P)+1), 4:5] <- NA
+  dimnames(table) <- list(c(tlabels, "Error","Total"), 
+                          c("Df","SS", "MS", "F", 
+                            "P"))
+  if (attr(object$terms, "intercept")){
+    table <- table[-1, ]
+    table$MS[nrow(table)]<-table$MS[nrow(table)]*(table$Df[nrow(table)])/(table$Df[nrow(table)]-1)
+    table$Df[nrow(table)]<-table$Df[nrow(table)]-1
+  }
+  structure(table, heading = c("Analysis of Variance Table\n"), 
+            class = c("anova", "data.frame"))
+}
+
+```
+
+```{r}
+# ----- MODEL FUNCTION 
+hey <- function(model) {
+  print('--- Model summary')
+  print(summary(model))
+  anova(model)
+  #anova_alt(model) # Classical ANOVA table for regression 
+  
+  # To obtain the AICp criterion for any sub-model,
+  # 1. Obtain a linear fit involving just the predictors for that sub-model, call it Fit
+  extractAIC(model)
+  
+  # To obtain the SBCp criterion (also called BICp):
+  extractAIC(model, k = log(n))
+  
+  sum((model$residuals/( 1-hatvalues(model)))^2)
+  
+  costs.pred.model <- predict(model,data.test)
+  print('--- Squared error summary ')
+  print(summary(sqrt((costs.pred.model - data.test$costs)^2)))
+
+  '---- From metrics function'
+  metrics(predict(model,data.test),data.test$costs)
+  
+  d<-data.frame(yp.model=costs.pred.model, y=data.test$costs)
+  ggplot(d, aes(yp.model, y, color =yp.model )) +
+    geom_point(shape = 16, size = 5, show.legend = FALSE) +
+    theme_minimal()
+  
+}
+```
+
+```{r}
+# ----- Function to evaluate the model
+metrics <- function(y_pred,y) {
+  rmse <- RMSE(y_pred, y)
+  mae <- MAE(y_pred, y)
+  RMSE_lm <- sqrt(mean((y - y_pred)^2,na.rm=TRUE))
+  score <- cbind("MAE" = mae, "RMSE" = rmse, "RMSW" = RMSE_lm)
+  print(score)
+}
+```
+
+```{r}
+# -------- Model fitting -------- 
+# 1. Model with all exploratory variables
+m1<- lm(data.train$costs~.,data=data.train) # with all explanatory variables
+hey(m1)
+
+```
+
+```{r}
+# 2. Model based on step function - Stepwise regression - Forward selection 
+m.base <-lm(data.train$costs~age,data=data.train)
+summary(m.base)
+
+m.full<- lm(data.train$costs~.,data=data.train) 
+summary(m.full)
+
+step(m.base,scope =list(upper=m.full,lower=~1), direction = "forward", trace=TRUE)
+```
+
+```{r}
+# Modelling the proposed model form forward selection 
+m2<- lm(formula = data.train$costs ~ age + smoker.yes + bmi + children, data = data.train)
+hey(m2)
+
+```
+
+```{r}
+# 3. Model based on step function - Stepwise regression - Backward selection 
+step(m.full, direction = "backward", trace=FALSE )
+
+m3<- lm(formula = data.train$costs ~ age + bmi + children + smoker.yes, data = data.train)
+hey(m3)
+```
+
+```{r}
+# 4. Model based on step function - Stepwise regression - Both forward and backward selection 
+step(m.base, scope = list(upper=m.full, lower=~1 ), direction = "both", trace=FALSE)
+
+m4<- lm(formula = data.train$costs ~ age + smoker.yes + bmi + children, data = data.train)
+hey(m4)
+```
+
+```{r}
+# 5. Model only categorical explanatory variables
+m5 = lm(formula = data.train$costs ~ sex.male + smoker.yes + region.northwest + region.southeast +
+          region.southwest, data = data.train)
+hey(m5)
+
+```
+
+```{r}
+# 6. Model excluding categorical explanatory variables
+m6 = lm(formula = data.train$costs ~ age + bmi + children,   data = data.train)
+hey(m6)
+```
+
+```{r}
+# -------- Model results -------- 
+plot(m1) # diagnostic plots of best model (lowest MAE and RSME)
+```
+
+```{r}
+# --------Assing outliers -------- 
+library(car)
+outlierTest(m1) # Bonferonni p-value for most extreme obs
+qqPlot(m1, main="QQ Plot") #qq plot for studentized resid
+
+```
+
+```{r}
+# -------- Dealing with outliers -------- 
+# Removoing outslide of Q1 and Q3 of costs 
+summary(data.train)
+```
+
+```{r}
+# Controlling outliers of Q1 and Q3
+outliers_q1 <- subset(data.train, costs < 4664)   
+outliers_q3 <- subset(data.train, costs > 16717)  
+```
+
+```{r}
+# Removing outliers from traning set 
+traning <- subset(data.train, 1500 < costs, costs < 60000) 
+```
+
+```{r}
+# -------- Model fitting -------- 
+# 1. Model with all exploratory variables
+m1_out<- lm(traning$costs~.,data=traning) # with all explanatory variables
+hey(m1_out)
+```
+
+```{r}
+# Checking outliers
+outlierTest(m1_out) # Bonferonni p-value for most extreme obs
+qqPlot(m1_out, main="QQ Plot") #qq plot for studentized resid
+```
+
+```{r}
+# Checking outliers
+outlierTest(m1_out) # Bonferonni p-value for most extreme obs
+qqPlot(m1_out, main="QQ Plot") #qq plot for studentized resid
+```
+
+```{r}
+# 2. Model based on step function - Stepwise regression - Forward selection 
+m.base <-lm(traning$costs~age,data=traning)
+summary(m.base)
+
+m.full<- lm(traning$costs~.,data=traning) 
+summary(m.full)
+
+step(m.base,scope =list(upper=m.full,lower=~1), direction = "forward", trace=TRUE)
+```
+
+```{r}
+# Modelling the proposed model form forward selection 
+m2_out<- lm(formula = traning$costs ~ age + smoker.yes + bmi, data = traning)
+
+hey(m2_out)
+
+```
+
+```{r}
+# 3. Model based on step function - Stepwise regression - Backward selection 
+step(m.full, direction = "backward", trace=FALSE )
+
+m3_out<- lm(formula = traning$costs ~ age + bmi + smoker.yes, data = traning)
+hey(m3_out)
+
+```
+
+```{r}
+# 4. Model based on step function - Stepwise regression - Both forward and backward selection 
+step(m.base, scope = list(upper=m.full, lower=~1 ), direction = "both", trace=FALSE)
+
+m4_out<- lm(formula = traning$costs ~ age + smoker.yes + bmi, data = traning)
+hey(m4_out)
+
+```
+
+```{r}
+# 6. Model excluding categorical explanatory variables
+m6_out = lm(formula = traning$costs ~ age + bmi + children,   data = traning)
+hey(m6_out)
+```
+
+```{r}
+# -------- Checking linearity between Costs and explatatory variabels (instead of just plotting) --------
+m.age = lm(formula = data.train$costs ~ age ,   data = data.train)
+plot(m.age , 1)
+
+m.sex = lm(formula = data.train$costs ~ sex.male ,   data = data.train)
+plot(m.sex , 1)
+
+m.bmi = lm(formula = data.train$costs ~ bmi ,   data = data.train)
+plot(m.bmi , 1)
+# BMI not linear 
+
+m.c = lm(formula = data.train$costs ~ children ,   data = data.train)
+plot(m.c , 1)
+
+m.s = lm(formula = data.train$costs ~ smoker.yes ,   data = data.train)
+plot(m.s , 1)
+
+m.r = lm(formula = data.train$costs ~ region.northwest + region.southwest + region.southeast ,   data = data.train)
+plot(m.r , 1)
+# Region could be non linear
+```
+
+
+# Regression Diagnostics 
+
+## Multi-collinearity
+```{r}
+# Evaluate Collinearity
+vif(m6_out) # variance inflation factors
+sqrt(vif(m6_out)) > 2 # problem?
+```
+
+## Non-independence of Errors
+```{r}
+# Test for Autocorrelated Errors
+durbinWatsonTest(m6_out)
+```
+## Non-constant Error Variance
+
+```{r}
+# Evaluate homoscedasticity
+# non-constant error variance test
+ncvTest(m6_out)
+# plot studentized residuals vs. fitted values
+spreadLevelPlot(m6_out)
+```
+## Non-normality
+
+```{r}
+# Normality of Residuals
+# qq plot for studentized resid
+qqPlot(m6_out, main="QQ Plot")
+# distribution of studentized residuals
+library(MASS)
+sresid <- studres(m6_out)
+hist(sresid, freq=FALSE,
+   main="Distribution of Studentized Residuals")
+xfit<-seq(min(sresid),max(sresid),length=40)
+yfit<-dnorm(xfit)
+lines(xfit, yfit)
+```
+## Outliers 
+```{r}
+# Assessing Outliers
+outlierTest(m6_out) # Bonferonni p-value for most extreme obs
+```
+## Influential Observations
+```{r}
+# Influential Observations
+# added variable plots
+avPlots(m6_out)
+# Cook's D plot
+# identify D values > 4/(n-k-1)
+cutoff <- 4/((nrow(costdata)-length(m6_out$coefficients)-2))
+plot(m6_out, which=4, cook.levels=cutoff)
+# Influence Plot
+influencePlot(m6_out, id.method="identify", main="Influence Plot", sub="Circle size is proportial to Cook's Distance" )
+```
+
+## 2nd approach with manual feature selection
+
+```{r}
+# Please, set your own path
+#setwd("C:/Users/33777/Desktop/Lisbonne 2021/Cours/Linear Model Analysis")
+data <- read.csv(file = "costdata.csv")
+
+data$sex <- as.factor(data$sex)
+data$smoker <- as.factor(data$smoker)
+data$region <- as.factor(data$region)
+
+set.seed(1)                         # for reproducible example
+n<-dim(data)[1]
+test.ind<-sample(n,floor(0.2*n))   # random sample of 25% of data
+
+#Training data
+train <- data[-test.ind,]
+
+#Testing data
+test <- data[test.ind,]
+```
+
+
+ First model : Simple Linear Regression
+
+```{r}
+model_lm1 <- lm(costs~., data=train)
+
+model_lm1_R2 <- summary(model_lm1)$adj.r.squared
+
+# Prediction on the test size
+pred_lm1 <- predict.lm(model_lm1, newdata = test)
+metrics_lm1 <- metrics(pred_lm1, test$costs)
+
+summary(model_lm1)$coefficients
+
+c("R2" = model_lm1_R2, "MAE" = metrics_lm1[1], "RMSE" = metrics_lm1[2])
+```
+
+# 2nd model : delete sex
+
+```{r}
+data <- data %>% dplyr::select(-c("sex"))
+
+#Training data
+train <- data[-test.ind,]
+
+#Testing data
+test <- data[test.ind,]
+
+# Train the model
+model_lm2 <- lm(costs~., data=train)
+
+model_lm2_R2 <- summary(model_lm2)$adj.r.squared
+
+# Prediction on the test size
+pred_lm2 <- predict.lm(model_lm2, newdata = test)
+metrics_lm2 <- metrics(pred_lm2, test$costs)
+
+summary(model_lm2)$coefficients
+
+c("R2" = model_lm2_R2, "MAE" = metrics_lm2[1], "RMSE" = metrics_lm2[2])
+```
+
+# 3rd model : Regroup region north
+
+```{r}
+# Regroupement de plusieurs levels : northeast et northwest en north
+data <- data %>% mutate(region = case_when(region == "northwest" | region == "northeast" ~ "north",
+                                    region == "southwest" ~ "southwest",
+                                    region == "southeast" ~ "southeast"))
+data$region <- as.factor(data$region)
+data <- data %>% mutate(region = case_when(region == "southwest" | region == "southeast" ~ "south",
+                                    TRUE ~ "north"))
+data$region <- as.factor(data$region)
+
+#Training data
+train <- data[-test.ind,]
+
+#Testing data
+test <- data[test.ind,]
+
+# Train the model
+model_lm3 <- lm(costs~., data=train)
+
+model_lm3_R2 <- summary(model_lm3)$adj.r.squared
+
+# Prediction on the test size
+pred_lm3 <- predict.lm(model_lm3, newdata = test)
+metrics_lm3 <- metrics(pred_lm3, test$costs)
+
+summary(model_lm3)$coefficients
+
+c("R2" = model_lm3_R2, "MAE" = metrics_lm3[1], "RMSE" = metrics_lm3[2])
+```
+
+
+# Detection of outliers
+
+```{r}
+n = dim(train)[1]
+p = 6
+plot(model_lm3$fitted.values,rstudent(model_lm3),main="Residus studentises en fonction des 
+     valeurs ajustees",xlab="Valeurs ajustees",ylab="Residus studentises") #Residus studentises en fonction des valeurs ajustees
+abline(h=c(-qt(0.975,n-p-1),qt(0.975,n-p-1)),col="red") #Lignes horizontales associees au quantile
+ind_aberrant <- which(abs(rstudent(model_lm3))>2)
+```
+
+# Model with outliers removed
+
+
+```{r}
+train <- train[-ind_aberrant,]
+
+# Train the model
+model_lm4 <- lm(costs~., data=train)
+
+model_lm4_R2 <- summary(model_lm4)$adj.r.squared
+
+# Prediction on the test size
+pred_lm4 <- predict.lm(model_lm4, newdata = test)
+metrics_lm4 <- metrics(pred_lm4, test$costs)
+
+summary(model_lm4)$coefficients
+
+c("R2" = model_lm4_R2, "MAE" = metrics_lm4[1], "RMSE" = metrics_lm4[2])
+```
+
+# Plots to study residuals of the final manual model
+
+```{r}
+plot(model_lm4)
+```
+
+
+
+
+
+
+
